@@ -215,6 +215,12 @@ Resources:
             Invoke-Expression "c:\chrome.exe /silent /install"
             Start-Sleep -Seconds 30
 
+            # Disable Password Complexity
+            secedit /export /cfg c:\secpol.cfg
+            (gc C:\secpol.cfg).replace("PasswordComplexity = 1", "PasswordComplexity = 0") | Out-File C:\secpol.cfg
+            secedit /configure /db c:\windows\security\local.sdb /cfg c:\secpol.cfg /areas SECURITYPOLICY
+            rm -force c:\secpol.cfg -confirm:$false
+            
             # Create User
             $Username = "${WindowsUsername}"
             $Password = "${WindowsPassword}"
